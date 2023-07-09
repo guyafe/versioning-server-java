@@ -1,0 +1,6 @@
+server:
+  port: 61285
+
+spring:
+  application:
+    name: versioning-server
