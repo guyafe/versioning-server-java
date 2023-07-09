@@ -68,15 +68,69 @@ publishing {
     }
     publications {
         maven(MavenPublication) {
-            version = createVersion(group, rootProject.name, version, getCurrentBranch());
+            version = createVersionString(group, rootProject.name, version, getCurrentBranch());
             from components.java
         }
+    }
+}
+
+publishToMavenLocal{
+    publishing {
+        publications {
+            version = createVersionString(group, rootProject.name, version, getCurrentBranch())
+        }
+    }
+    doLast {
+        bumpPatchVersion();
     }
 }
 
 def getCurrentBranch() {
     String gitBranch = 'git branch --show-current'.execute().text.trim()
     return gitBranch
+}
+
+def createVersionString(groupName, artifactName, versionName, branch) {
+    println('Creating version for artifact: ' + groupName + ':' + artifactName + ':' + versionName + ' on branch: ' + branch)
+    if (branch == 'main') {
+        println('Branch is main, resolving to current version: ' + version)
+        return version
+    } else {
+        def majorMinor = versionName.split('\\.')[0] + "." + versionName.split('\\.')[1]
+        def finalVersion = majorMinor + "." + branch + "-SNAPSHOT"
+        println('branch is not main, resolving to: ' + finalVersion)
+        return finalVersion
+
+    }
+}
+
+/**
+ * Bumps the current patch version and commits the change.
+ */
+def bumpPatchVersion() {
+    println 'Bumping patch version'
+    if (getCurrentBranch() != 'main') {
+        return // do not bump version on non-main branches
+    }
+    def status = 'git status --porcelain'.execute().text
+    if (status != '') {
+        throw new GradleException("Cannot bump version on a dirty working tree")
+    }
+    def file = file("build.gradle")
+    def content = file.getText('UTF-8')
+    def nextPatch = version.split("\\.")[2].toInteger() + 1
+    def newVersion = version.split("\\.")[0] + "." + version.split("\\.")[1] + "." + nextPatch
+    content = content.replaceAll("version = '${version}'", "version = '${newVersion}'")
+    file.write(content)
+    println "Bumped version from ${version} to ${newVersion}"
+    exec {
+        workingDir '.'
+        commandLine 'git', 'add', 'build.gradle'
+    }
+    exec {
+        workingDir '.'
+        commandLine 'git', 'commit', '-m', '[NO CI] Bump patch version'
+    }
 }
 
 /**
@@ -121,18 +175,4 @@ def resolveDependencyVersion(groupName, artifactName, majorMinor) {
     String fullDependency = groupName + ":" + artifactName + ":" + majorMinor + "." + suffix
     println("Resolving dependency version to: " + fullDependency)
     return fullDependency
-}
-
-def createVersion(groupName, artifactName, versionName, branch) {
-    println('Creating version for artifact: ' + groupName + ":" + artifactName + ":" + versionName + " on branch: " + branch)
-    if(branch == "main") {
-        println("Branch is main, resolving to current version")
-        return version
-    } else {
-        def majorMinor = versionName.split("\\.")[0] + "." + versionName.split("\\.")[1]
-        def finalVersion = majorMinor + "." + branch + "-SNAPSHOT"
-        println("branch is not main, resolving to: " + finalVersion)
-        return finalVersion
-
-    }
 }
